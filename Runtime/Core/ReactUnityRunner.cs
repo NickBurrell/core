@@ -2,6 +2,7 @@ using Esprima;
 using Jint.Runtime;
 using Jint.Runtime.Descriptors;
 using Jint.Runtime.Interop;
+using ReactUnity.Debugger;
 using ReactUnity.DomProxies;
 using ReactUnity.Helpers;
 using ReactUnity.Interop;
@@ -13,10 +14,12 @@ using UnityEngine;
 
 namespace ReactUnity
 {
-    public class ReactUnityRunner
+    public class ReactUnityRunner : IDisposable
     {
         private Jint.Engine engine;
         private ReactContext context;
+        private Jint.DebugAgent.DebugAgentServer server;
+
 
         public void RunScript(string script, ReactContext ctx, List<TextAsset> preload = null, Action callback = null)
         {
@@ -36,10 +39,14 @@ namespace ReactUnity
             engine.SetValue("Unity", new ReactUnityAPI(engine));
             engine.SetValue("RootContainer", context.Host);
             engine.SetValue("Globals", context.Globals);
+
+            server = new Jint.DebugAgent.DebugAgentServer(Jint.DebugAgent.DebugAgentServer.Options.WaitForDebuggerOnFirstStatement,
+                9222, (owner, domains) => new ChromeDebugProtocolServer(owner, domains), engine);
+
             try
             {
                 if (preload != null) preload.ForEach(x => engine.Execute(x.text));
-                engine.Execute(script);
+                engine.Execute(script, new ParserOptions("react"), "react");
                 callbacks.ForEach(x => x?.Invoke());
             }
             catch (ParserException ex)
@@ -69,8 +76,8 @@ namespace ReactUnity
 
         void CreateEngine()
         {
+            var ct = new System.Threading.CancellationToken();
             engine = new Jint.Engine(x =>
-            {
                 x.AllowClr(
                     typeof(System.Convert).Assembly,
 #if UNITY_EDITOR
@@ -81,13 +88,15 @@ namespace ReactUnity
                     typeof(UnityEngine.Vector3).Assembly,
                     typeof(UnityEngine.Component).Assembly,
                     typeof(ReactUnityRunner).Assembly
-                );
-                x.CatchClrExceptions(ex =>
+                ).CatchClrExceptions(ex =>
                 {
                     Debug.LogException(ex);
                     return true;
-                });
-            });
+                })
+                .DebuggerStatementHandling(Jint.Runtime.Debugger.DebuggerStatementHandling.Script)
+                .DebugMode()
+                .Constraint(new Jint.Constraints.CancellationConstraint(ct))
+            );
 
             engine.SetValue("log", new Func<object, object>((x) => { Debug.Log(x); return x; }));
             engine.Execute("__dirname = '';");
@@ -164,6 +173,12 @@ namespace ReactUnity
             engine.Execute(@"XMLHttpRequest = function() { return new oldXMLHttpRequest('" + location.origin + @"'); }");
 #endif
             engine.SetValue("document", new DocumentProxy(context, this.ExecuteScript, location.origin));
+        }
+
+        public void Dispose()
+        {
+            server?.Dispose();
+            server = null;
         }
     }
 }

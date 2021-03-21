@@ -53,6 +53,7 @@ namespace ReactUnity
 
             ctx?.Dispose();
             dispatcher?.Dispose();
+            runner?.Dispose();
             runner = null;
             dispatcher = null;
             ctx = null;
