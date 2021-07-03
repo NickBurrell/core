@@ -45,6 +45,11 @@ namespace ReactUnity.DomProxies
         {
             return new List<IDomElementProxy>();
         }
+
+        public List<IDomElementProxy> querySelectorAll(string domString)
+        {
+            return null;
+        }
     }
 
     public interface IDomElementProxy
